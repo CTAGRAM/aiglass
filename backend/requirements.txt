@@ -1,0 +1,15 @@
+# --- server (needed to run the API) ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+
+# --- orchestrator seam (needed for Hermes/OpenClaw over MCP) ---
+mcp>=1.0
+httpx>=0.28
+cachetools>=7.1
+# --- optional: local speech-to-text ---
+# Heavy; may lack wheels on the newest Python. The mock STT needs none of this.
+# faster-whisper>=1.0
+
+# The core pipeline (app/pipeline.py + stt/mock + memory + actions + orchestrator/mock|hermes)
+# depends ONLY on the Python standard library, so tests run without installing anything above.

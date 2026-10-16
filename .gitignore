@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# App data
+*.db
+aiglass.db
+
+# Env / secrets
+.env
+*.local
+
+# OS
+.DS_Store
+
+# Android (glasses app) — keys and SDK token live only on your machine
+android/app/src/main/java/**/Secrets.kt
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/.kotlin/
+.pytest_cache/
