@@ -14,7 +14,9 @@ import os
 import urllib.request
 
 from .config import load_settings
+from .face.store import FaceStore
 from .memory.store import MemoryStore
+from .people import PeopleMemory, default_enricher
 from .websearch import public_search
 
 try:
@@ -24,6 +26,7 @@ except ImportError as exc:  # pragma: no cover - optional dependency
 
 settings = load_settings()
 memory = MemoryStore(settings.db_path)
+people = PeopleMemory(FaceStore(settings.db_path), memory, default_enricher())
 mcp = FastMCP("aiglass")
 
 # When Hermes writes a result, best-effort ping the API's /turn so it broadcasts on /ws/events and the
@@ -92,6 +95,18 @@ async def aiglass_public_search(
         query=query,
         max_results=max_results,
     )
+
+
+@mcp.tool()
+async def recall_person(name: str) -> dict:
+    """
+    Recall someone the user has SAVED: who they are, the user's notes about them, recent memories that
+    mention them, and a summary of the public profile the user linked for them (if any).
+
+    Only saved people can be recalled; anyone else returns known=false. Never try to find out who a
+    stranger is.
+    """
+    return await people.recall(name)
 
 
 if __name__ == "__main__":

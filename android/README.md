@@ -2,7 +2,7 @@
 
 The phone side of aiGlass. It connects to Ray-Ban Meta glasses through Meta's Wearables Device Access
 Toolkit (DAT), runs a live Gemini session over the glasses' camera and audio, and routes Gemini's tool
-calls either to the aiGlass backend or to on-phone tools such as UPI QR payment.
+calls either to the aiGlass backend (agent tasks, saved people) or to on-phone tools such as UPI QR payment.
 
 Based on Intent-Lab's [VisionClaw](https://github.com/Intent-Lab/VisionClaw) Android sample, which builds on
 Meta's DAT camera-access sample. See [Credits](#credits).
@@ -19,6 +19,9 @@ flowchart LR
     LIVE -- "tool calls" --> TR
     TR -- "execute" --> OCB["OpenClawBridge<br/>POST /v1/chat/completions"]
     TR -- "scan_payment_qr<br/>initiate_payment" --> PB["PaymentBridge"]
+    TR -- "identify_person<br/>save_person" --> FB["FaceBridge<br/>/face/recognize · /face/enroll"]
+    LF --> FB
+    FB --> BE
     LF --> PB
     PB -- "upi://pay" --> UPI["UPI app"]
     OCB --> BE["aiGlass backend"]
@@ -31,18 +34,21 @@ flowchart LR
 | `execute(task)` | `OpenClawBridge` → backend | Anything durable: web research, notes, lists, memory recall. Runs through the Hermes agent |
 | `scan_payment_qr()` | `PaymentBridge` | Decodes the UPI QR in the current glasses frame with ML Kit; returns payee and any fixed amount |
 | `initiate_payment(amount)` | `PaymentBridge` | After spoken confirmation, opens the UPI app pre-filled. Refuses amounts above ₹1,400 |
+| `identify_person()` | `FaceBridge` → backend | Recognises the person in view **among saved people only**; speaks their name, your notes, what you last talked about and their shared profile |
+| `save_person(name, notes?, profile?)` | `FaceBridge` → backend | Saves the person in view (with their agreement), plus an optional profile link they shared |
 
 ## What I added to the upstream sample
 
 | File | Change |
 |---|---|
 | `openclaw/PaymentBridge.kt` | New. QR scan → UPI intent, with amount validation and a voice-payment cap |
+| `openclaw/FaceBridge.kt` | New. Calls the backend's people endpoints and turns a recall into one spoken sentence |
 | `gemini/LatestFrame.kt` | New. Keeps the most recent camera JPEG for on-demand tools |
-| `openclaw/ToolCallModels.kt` | Declares the two payment tools next to `execute` |
-| `openclaw/ToolCallRouter.kt` | Routes payment tools on-device and everything else to the backend |
+| `openclaw/ToolCallModels.kt` | Declares the people and payment tools next to `execute` |
+| `openclaw/ToolCallRouter.kt` | Routes people tools to `FaceBridge`, payment tools on-device, everything else to the backend |
 | `gemini/AudioManager.kt` | Routes voice to the glasses' Bluetooth headset when possible, falls back to the phone mic |
 | `gemini/GeminiLiveService.kt` | Saves each frame into `LatestFrame` |
-| `settings/SettingsManager.kt` | System prompt: memory-routing rule and a strict confirm-before-pay protocol |
+| `settings/SettingsManager.kt` | System prompt: memory-routing rule, saved-people rules (never guess a stranger) and a strict confirm-before-pay protocol |
 | `app/build.gradle.kts` | Adds ML Kit barcode scanning |
 
 ## Audio on Ray-Ban Meta Gen 1

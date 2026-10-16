@@ -105,6 +105,8 @@ object ToolDeclarations {
     fun allDeclarationsJSON(): JSONArray {
         return JSONArray()
             .put(executeJSON())
+            .put(identifyPersonJSON())
+            .put(savePersonJSON())
             .put(scanPaymentQrJSON())
             .put(initiatePaymentJSON())
     }
@@ -122,6 +124,44 @@ object ToolDeclarations {
                     })
                 })
                 put("required", JSONArray().put("task"))
+            })
+            put("behavior", "BLOCKING")
+        }
+    }
+
+    private fun identifyPersonJSON(): JSONObject {
+        return JSONObject().apply {
+            put("name", "identify_person")
+            put("description", "Recognize the person currently in view, but ONLY among people the user has saved. Call this when the user asks who someone is ('who is this?', 'do I know them?'). Returns their name, the user's notes, what they last talked about and their linked public profile. If they aren't saved, say you don't recognize them. Never guess a stranger's identity.")
+            put("parameters", JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject())
+            })
+            put("behavior", "BLOCKING")
+        }
+    }
+
+    private fun savePersonJSON(): JSONObject {
+        return JSONObject().apply {
+            put("name", "save_person")
+            put("description", "Save the person currently in view so they can be recognized later. Call when the user asks to remember someone ('save this as Alice', 'remember him as my coworker Bob'). Only save people who have agreed to it.")
+            put("parameters", JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("name", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "The person's name")
+                    })
+                    put("notes", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional note about them, e.g. 'colleague from work'")
+                    })
+                    put("profile", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional public profile they shared with the user, e.g. a GitHub or LinkedIn URL or handle")
+                    })
+                })
+                put("required", JSONArray().put("name"))
             })
             put("behavior", "BLOCKING")
         }

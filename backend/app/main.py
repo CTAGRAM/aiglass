@@ -10,6 +10,11 @@ Endpoints
   GET  /memories?kind=         list memories (kind=observation for what the camera saw)
   GET  /memories/search?q=     keyword search
   GET  /transcripts            recent transcripts
+  POST /face/enroll            save a person (with their consent) from one photo + optional notes / profile link
+  POST /face/recognize         who is this? matches SAVED people only, then recalls what you know about them
+  GET  /face/list              names of saved people
+  DEL  /face/{name}            forget a person
+  GET  /people/{name}          recall a saved person: notes, recent memories, linked public profile
 
 Requires: pip install -r requirements.txt (fastapi, uvicorn). The pipeline it drives is stdlib-only.
 Run: uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -27,6 +32,7 @@ from pydantic import BaseModel
 from .config import build_orchestrator, build_stt, build_vision, load_settings
 from .events import EventHub
 from .memory.store import MemoryStore
+from .people import PeopleMemory, default_enricher
 from .pipeline import Pipeline
 from .shim import extract_task, shape_completion
 
@@ -36,6 +42,16 @@ settings = load_settings()
 memory = MemoryStore(settings.db_path)
 pipeline = Pipeline(build_stt(settings), memory, build_orchestrator(settings), vision=build_vision(settings))
 hub = EventHub()  # real-time sync spine shared by Gemini (turns) and Hermes (results)
+
+try:  # face matching (saved people only) is additive — never block the core backend from starting
+    from .face.service import FaceService
+    from .face.store import FaceStore
+    _faces = FaceStore()
+    _face = FaceService(store=_faces)
+    _people = PeopleMemory(_faces, memory, default_enricher())
+    _FACE = True
+except Exception:  # noqa: BLE001
+    _FACE = False
 
 app = FastAPI(title="aiGlass backend", version="0.1.0")
 
@@ -193,8 +209,7 @@ async def ws_ingest(ws: WebSocket) -> None:
 
 @app.websocket("/ws/events")
 async def ws_events(ws: WebSocket) -> None:
-    """Subscribe to the live event stream: turns, observations, and action results as they happen.
-    The glasses app listens here to speak Hermes results the moment a task finishes."""
+    """Subscribe to the live event stream: turns, observations, and action results as they happen."""
     if not await _ws_authed(ws):
         return
     await ws.accept()
@@ -206,6 +221,48 @@ async def ws_events(ws: WebSocket) -> None:
         pass
     finally:
         hub.unsubscribe(q)
+
+
+if _FACE:
+    class FaceEnroll(BaseModel):
+        name: str
+        image_b64: str
+        notes: str = ""
+        profile_link: str = ""   # a public profile the person shared with you, e.g. a GitHub or LinkedIn URL
+
+    class FaceImage(BaseModel):
+        image_b64: str
+
+    @app.post("/face/enroll", dependencies=[Depends(require_auth)])
+    async def face_enroll(body: FaceEnroll) -> dict:
+        """Save a person so they can be recognised later. Save ONLY people who agreed to it."""
+        return _face.enroll(base64.b64decode(body.image_b64), body.name, body.notes, body.profile_link)
+
+    @app.post("/face/recognize", dependencies=[Depends(require_auth)])
+    async def face_recognize(body: FaceImage) -> dict:
+        """Match the face against SAVED people only (an unknown face is never identified), then recall
+        what the user knows about the match."""
+        result = _face.recognize(base64.b64decode(body.image_b64))
+        if not result.get("recognized"):
+            return result
+        recall = await _people.recall(result["name"])
+        return {"recognized": True, "score": result["score"], **recall}
+
+    @app.get("/face/list", dependencies=[Depends(require_auth)])
+    def face_list() -> dict:
+        return {"saved": _face.list()}
+
+    @app.delete("/face/{name}", dependencies=[Depends(require_auth)])
+    def face_delete(name: str) -> dict:
+        return {"deleted": _face.delete(name)}
+
+    @app.get("/people/{name}", dependencies=[Depends(require_auth)])
+    async def people_recall(name: str) -> dict:
+        """Recall a saved person. 404 for anyone who isn't saved: there is no lookup of strangers."""
+        result = await _people.recall(name)
+        if not result["known"]:
+            raise HTTPException(status_code=404, detail=result["message"])
+        return result
 
 
 async def _broadcast(result: dict) -> None:

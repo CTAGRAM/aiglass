@@ -6,6 +6,7 @@ pydantic>=2.6
 # --- orchestrator seam (needed for Hermes/OpenClaw over MCP) ---
 mcp>=1.0,<2        # MCP SDK 1.x — 2.x renamed FastMCP
 httpx>=0.28
+cachetools>=7.1    # TTL caches for profile enrichment (stdlib fallback if absent)
 # --- optional: local speech-to-text ---
 # Heavy; may lack wheels on the newest Python. The mock STT needs none of this.
 # faster-whisper>=1.0

@@ -165,7 +165,7 @@ class GeminiLiveService {
             val baos = ByteArrayOutputStream()
             bitmap.compress(Bitmap.CompressFormat.JPEG, GeminiConfig.VIDEO_JPEG_QUALITY, baos)
             val bytes = baos.toByteArray()
-            LatestFrame.jpeg = bytes            // keep the current view for on-demand camera tools (QR pay)
+            LatestFrame.jpeg = bytes            // keep the current view for on-demand camera tools (people, QR pay)
             val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
             val json = JSONObject().apply {
                 put("realtimeInput", JSONObject().apply {

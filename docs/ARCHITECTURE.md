@@ -9,6 +9,7 @@ aiGlass is split so that each part does one job and can be swapped without touch
 | **Reflex brain** | Live voice and vision conversation, answers in about a second | Gemini Live |
 | **Deep brain** | Multi-step work with tools, on your own server | Hermes agent on Claude Sonnet 4.6 |
 | **Memory and tools** | One shared history plus the tools the agent uses | `backend/` |
+| **People memory** | Recognises and recalls the people you saved | `backend/app/people.py`, `face/`, `osint/` |
 | **Spider-Sense** | Local haptic safety for blind spots | `spidersense/` |
 
 ## System context
@@ -34,6 +35,7 @@ flowchart TB
         BE["FastAPI backend"]
         HE["Hermes agent"]
         MC["MCP server"]
+        PM["People memory<br/>saved people only"]
         DB[("SQLite")]
     end
 
@@ -50,6 +52,9 @@ flowchart TB
     MC --> TV
     MC <--> DB
     BE <--> DB
+    BE --> PM
+    MC --> PM
+    PM --> DB
 ```
 
 ## Why this shape
@@ -98,7 +103,9 @@ The full module map, endpoints and settings are in [backend/README.md](../backen
 - **Self-hosted memory.** Transcripts and memories stay on your server.
 - **Authenticated and encrypted.** Every endpoint except `/health` needs the bearer token. Caddy
   terminates TLS with a Let's Encrypt certificate.
-- **No identification of people.** aiGlass has no face recognition and no lookup of strangers.
+- **Saved people only.** Faces are matched only against people you saved; an unknown face is never
+  identified, and nothing looks up a stranger. Profile summaries come only from links you saved, and any
+  person can be deleted. Details: [PEOPLE_MEMORY.md](PEOPLE_MEMORY.md).
 - **Human-approved money.** A spoken confirmation is mandatory, voice amounts are capped at ₹1,400, and
   the UPI app requires your PIN.
 - **Secrets out of git.** `Secrets.kt`, `local.properties` and `.env` files are gitignored.

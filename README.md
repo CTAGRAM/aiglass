@@ -23,6 +23,7 @@ Talk to your glasses. It sees what you see, remembers it, and gets things done.
 |---|---|---|
 | 🗣️ **Ask and act** | *"Research budget mechanical keyboards and save the top three to my notes."* | The agent searches the web, saves the shortlist to your memory, and speaks the answer in your glasses. |
 | 🧠 **Remember** | *"What were my action items from today?"* | It reads the shared memory of everything the glasses heard, saw and did. |
+| 👤 **Remember people** | *"Save this as Priya, we met at the AI meetup."* Later: *"Who is this?"* | For people **you saved**, it tells you who they are, your notes, what you last talked about, and the public profile they shared. Anyone else: *"I don't recognise them."* |
 | 💳 **Pay a QR** | Look at a shop's UPI QR and say *"pay this, 250"* | It reads the payee back, waits for your **spoken confirmation**, and opens your UPI app pre-filled. **You** approve with your PIN. |
 | 📳 **Spider-Sense** (ESP32 band) | Something approaches from the side or behind | The band buzzes on that side, stronger the sooner it would reach you. |
 
@@ -33,6 +34,7 @@ Built July–August 2026 · consolidated into this repo October 2026.
 - [Architecture](#architecture)
 - [How a request flows](#how-a-request-flows)
 - [Paying a UPI QR safely](#paying-a-upi-qr-safely)
+- [Remembering people](#remembering-people)
 - [Repository layout](#repository-layout)
 - [Tech stack](#tech-stack)
 - [Quick start](#quick-start)
@@ -60,6 +62,7 @@ flowchart TB
         DAT["Meta Wearables<br/>Device Access Toolkit"] --> SESS["Gemini session<br/>+ audio routing"]
         SESS --> ROUTER["Tool router"]
         ROUTER -- "scan_payment_qr<br/>initiate_payment" --> PAY["PaymentBridge<br/>ML Kit QR → UPI intent"]
+        ROUTER -- "identify_person<br/>save_person" --> FACE["FaceBridge"]
     end
 
     LIVE["☁️ Gemini Live<br/>voice + vision"]
@@ -71,6 +74,8 @@ flowchart TB
         HERMES -- "MCP stdio" --> MCP["MCP server<br/>memory + web search"]
         MCP --> DB[("SQLite<br/>shared memory")]
         API --> DB
+        PEOPLE["People memory<br/>saved people only"] --> DB
+        MCP --> PEOPLE
     end
 
     CLAUDE["☁️ Claude Sonnet 4.6"]
@@ -82,6 +87,7 @@ flowchart TB
     LIVE -- "tool calls" --> ROUTER
     PAY --> UPI
     ROUTER -- "execute(task)" --> API
+    FACE -- "/face/recognize<br/>/face/enroll" --> PEOPLE
     HERMES <--> CLAUDE
 ```
 
@@ -147,6 +153,21 @@ sequenceDiagram
 
 aiGlass only **prepares** a payment. It never moves money on its own.
 
+## Remembering people
+
+```mermaid
+flowchart LR
+    Q["'Who is this?'"] --> M{"Face matches someone<br/>you saved?"}
+    M -- "no" --> N["'I don't recognise them.'"]
+    M -- "yes" --> R["Name + your notes<br/>+ what you last talked about<br/>+ the profile they shared"]
+    R --> S["Spoken in the glasses"]
+```
+
+Save someone (with their OK) by saying *"save this as Priya, we met at the AI meetup"*, and optionally the
+GitHub or LinkedIn they gave you. aiGlass stores a face embedding, not the photo. When you meet again it
+recalls what you know, and turns the profile link they shared into a short, sourced summary. It never
+identifies strangers, and you can delete anyone. Design and rules: [docs/PEOPLE_MEMORY.md](docs/PEOPLE_MEMORY.md).
+
 ## Repository layout
 
 ```text
@@ -154,12 +175,15 @@ aiglass/
 ├── android/              Glasses app (Kotlin) — Meta DAT + Gemini Live + tools
 │   └── app/src/main/java/.../cameraaccess/
 │       ├── gemini/       Live session, audio routing, latest-frame buffer
-│       ├── openclaw/     Tool declarations, router, backend bridge, PaymentBridge
+│       ├── openclaw/     Tool declarations, router, backend bridge, PaymentBridge, FaceBridge
 │       └── settings/     System prompt and routing rules
 ├── backend/              FastAPI + MCP server (Python)
 │   ├── app/
 │   │   ├── main.py       HTTP + WebSocket API, /v1/chat/completions shim
 │   │   ├── mcp_server.py MCP tools for the agent
+│   │   ├── people.py     people memory: recall saved people only
+│   │   ├── face/         face embeddings + matching against saved people
+│   │   ├── osint/        profile enrichment from links you saved (parallel public sources)
 │   │   ├── pipeline.py   audio → transcript → memory → action items → agent
 │   │   ├── memory/       SQLite store
 │   │   ├── stt/          speech-to-text providers (mock, faster-whisper)
@@ -181,6 +205,7 @@ aiglass/
 | Agent | Nous Research Hermes agent on Claude Sonnet 4.6 |
 | Tools | Model Context Protocol (FastMCP), Tavily web search |
 | Backend | Python, FastAPI, SQLite, asyncio event hub, pluggable STT and vision |
+| People memory | InsightFace (ONNX Runtime) embeddings, cosine matching, async multi-source profile enrichment with a SQLite knowledge graph |
 | Infra | AWS Lightsail (Mumbai), Caddy + Let's Encrypt, systemd, bearer-token auth |
 | Hardware | ESP32, 4× VL53L1X time-of-flight sensors, ULN2803A, coin vibration motors |
 
@@ -213,6 +238,8 @@ Flip `STT_PROVIDER`, `VISION_PROVIDER` and `ORCH_PROVIDER` to go live. See [back
 | `POST` | `/turn` | Record a Gemini conversation turn into shared memory and broadcast it |
 | `POST` | `/ingest` · `/ingest_frame` | One-shot audio/text or camera-frame ingest |
 | `GET` | `/memories` · `/memories/search` · `/transcripts` | Read the shared memory |
+| `POST` | `/face/enroll` · `/face/recognize` | Save a person; recognise a saved person and recall what you know |
+| `GET` · `DELETE` | `/people/{name}` · `/face/{name}` | Recall a saved person (404 for anyone else) · forget them |
 | `WS` | `/ws/ingest` | Stream audio, frames or text |
 | `WS` | `/ws/events` | Live stream of turns, observations and agent results |
 
@@ -223,6 +250,7 @@ Flip `STT_PROVIDER`, `VISION_PROVIDER` and `ORCH_PROVIDER` to go live. See [back
 | `list_action_items` | Open tasks extracted from conversations |
 | `add_memory` | Write a fact or result back. `result` entries are also broadcast on `/ws/events` |
 | `aiglass_public_search` | Web search (companies, products, technologies) |
+| `recall_person` | Who a **saved** person is: notes, recent memories, linked profile. `known: false` for anyone else |
 
 Every endpoint except `/health` requires `Authorization: Bearer <API_TOKEN>`.
 
@@ -239,7 +267,9 @@ The problems that took the longest, written up with symptom → cause → fix in
 
 - **Payments need your voice and your PIN.** A spoken confirmation of payee and amount is mandatory, voice amounts are capped at ₹1,400, and the UPI app always asks you to authorise.
 - **The QR's payee name can lie.** Whoever prints a QR sets the name in it. Trust the name your bank shows in the UPI app.
-- **It does not identify people.** There is no face recognition and no lookup of strangers.
+- **It only remembers people you save.** Faces are matched against your saved people only, and an unknown
+  face is never identified. Nothing looks up a stranger, profile summaries come only from links you saved,
+  and you can delete anyone. Save people only with their agreement.
 - **Your data stays on your server.** Memory lives in SQLite on your own VPS. Every endpoint needs a bearer token, and traffic is HTTPS via Caddy.
 - **Keys never enter git.** `Secrets.kt`, `local.properties` and `.env` are gitignored.
 - **The safety loop is local.** The Spider-Sense haptic path runs entirely on the ESP32; Bluetooth is telemetry only.

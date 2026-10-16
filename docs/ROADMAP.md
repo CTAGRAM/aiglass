@@ -11,6 +11,7 @@ flowchart LR
         D4["UPI QR pay<br/>with spoken confirmation"]
         D5["AWS deploy<br/>Caddy HTTPS · systemd"]
         D6["Spider-Sense firmware"]
+        D7["People memory<br/>saved people only"]
     end
     subgraph Next["🔜 Next"]
         N1["App subscribes to /ws/events<br/>and mirrors turns to /turn"]
@@ -36,6 +37,7 @@ flowchart LR
 | Glasses app: camera, voice, tool routing | Live on Ray-Ban Meta Gen 1 with Developer Mode |
 | UPI QR pay | Scan, parse, confirm and intent launch verified in logcat. Personal QRs are declined by NPCI rules; merchant QRs are the target |
 | Deploy: Lightsail, Caddy + Let's Encrypt, token auth | Deployed in ap-south-1 (Mumbai) |
+| People memory: save, recognise and recall saved people; profile enrichment from saved links | `tests/test_people.py`, `tests/test_people_routes.py`, `app/face/tests_face.py`, `app/osint/tests/` |
 | Spider-Sense firmware and bring-up guide | Compiles for ESP32 (Arduino core 3.3, Pololu VL53L1X 1.3) |
 
 ## Next
@@ -57,6 +59,7 @@ flowchart LR
 
 ## Non-goals
 
-- **Identifying strangers.** No face recognition, no lookups of people.
+- **Identifying strangers.** Recognition and recall work only for people you saved; there is no lookup of
+  anyone else.
 - **Autonomous payments.** aiGlass prepares; you authorise.
 - **Moving the Spider-Sense safety loop off the ESP32.** The phone is telemetry only.

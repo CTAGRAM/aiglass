@@ -10,6 +10,7 @@ import org.json.JSONObject
 
 class ToolCallRouter(
     private val bridge: OpenClawBridge,
+    private val faceBridge: FaceBridge,
     private val paymentBridge: PaymentBridge?,
     private val scope: CoroutineScope
 ) {
@@ -43,6 +44,13 @@ class ToolCallRouter(
 
         val job = scope.launch {
             val result = when (callName) {
+                "identify_person" -> faceBridge.recognize(LatestFrame.jpeg)
+                "save_person" -> faceBridge.enroll(
+                    LatestFrame.jpeg,
+                    call.args["name"]?.toString().orEmpty(),
+                    call.args["notes"]?.toString().orEmpty(),
+                    call.args["profile"]?.toString().orEmpty(),
+                )
                 "scan_payment_qr" -> paymentBridge?.scanQr(LatestFrame.jpeg)
                     ?: ToolResult.Failure("Payments are not available in this session.")
                 "initiate_payment" -> paymentBridge?.initiate(call.args["amount"]?.toString().orEmpty())

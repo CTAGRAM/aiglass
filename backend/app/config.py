@@ -34,6 +34,7 @@ class Settings:
     vision_api_key: str = os.getenv("VISION_API_KEY", "")
     vision_model: str = os.getenv("VISION_MODEL", "gpt-4o-mini")
     tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
+    github_token: str = os.getenv("GITHUB_TOKEN", "")      # optional: higher GitHub API limits for profile enrichment
 
 def load_settings() -> Settings:
     return Settings()

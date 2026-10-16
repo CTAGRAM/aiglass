@@ -109,6 +109,7 @@ needs a PAT). Requires Developer Mode enabled in the Meta AI app to pair the gla
 - ✅ Glasses camera stream (needs Developer Mode on the glasses).
 - ✅ UPI QR pay from the glasses, with spoken confirmation and a ₹1,400 voice cap.
 - ✅ Spider-Sense firmware and build guide.
+- ✅ People memory: save someone, then "who is this?" recalls them (saved people only). See [PEOPLE_MEMORY.md](PEOPLE_MEMORY.md).
 - ⬜ App subscribes to `/ws/events` and mirrors turns to `/turn`, so the backend sees every turn.
 - ⬜ Auto-capture: continuously caption frames into memory (`/ingest_frame` is ready).
 - ⬜ Stateful web actions (e.g. add-to-cart). They need a logged-in browser session and are fragile due to

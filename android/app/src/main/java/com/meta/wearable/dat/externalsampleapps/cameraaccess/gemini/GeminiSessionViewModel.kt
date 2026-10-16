@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.openclaw.FaceBridge
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.openclaw.OpenClawBridge
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.openclaw.PaymentBridge
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.openclaw.OpenClawEventClient
@@ -42,6 +43,7 @@ class GeminiSessionViewModel : ViewModel() {
 
     private val geminiService = GeminiLiveService()
     private val openClawBridge = OpenClawBridge()
+    private val faceBridge = FaceBridge()
     private var toolCallRouter: ToolCallRouter? = null
     private val audioManager = AudioManager()
     private val eventClient = OpenClawEventClient()
@@ -113,7 +115,7 @@ class GeminiSessionViewModel : ViewModel() {
 
             // Wire tool call handling
             val paymentBridge = appContext?.let { PaymentBridge(it) }
-            toolCallRouter = ToolCallRouter(openClawBridge, paymentBridge, viewModelScope)
+            toolCallRouter = ToolCallRouter(openClawBridge, faceBridge, paymentBridge, viewModelScope)
 
             geminiService.onToolCall = { toolCall ->
                 for (call in toolCall.functionCalls) {

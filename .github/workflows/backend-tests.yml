@@ -23,7 +23,7 @@ jobs:
       - name: Install
         run: pip install -r requirements.txt pytest
       - name: Unit tests
-        run: python -m pytest tests/ -q
+        run: python -m pytest tests app/osint/tests app/face/tests_face.py -q
       - name: App and MCP server load
         run: |
           python -c "import app.main as m; print(sorted({r.path for r in m.app.routes}))"
