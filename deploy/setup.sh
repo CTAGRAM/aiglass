@@ -25,12 +25,17 @@ echo "==> Default .env (edit to go live)"
 if [ ! -f "$BACKEND/.env" ]; then
   cat > "$BACKEND/.env" <<ENV
 # --- flip these to go live ---
-ORCH_PROVIDER=mock          # mock | hermes
+# every endpoint except /health requires: Authorization: Bearer <token>
+API_TOKEN=$(openssl rand -hex 24)
+# mock | hermes
+ORCH_PROVIDER=mock
 HERMES_URL=http://127.0.0.1:8080
 HERMES_API_KEY=
 
-VISION_PROVIDER=mock        # mock | llm  (point llm at YOUR endpoint)
-VISION_BASE_URL=            # e.g. https://your-llm-host/v1
+# mock | llm  (point llm at YOUR endpoint)
+VISION_PROVIDER=mock
+# e.g. https://your-llm-host/v1
+VISION_BASE_URL=
 VISION_API_KEY=
 VISION_MODEL=
 
@@ -57,4 +62,5 @@ systemctl enable --now aiglass-backend
 
 echo "==> Done. Check:  curl http://127.0.0.1:8000/health"
 echo "Note: the MCP server is NOT a network service — Hermes launches it over stdio."
-echo "      See deploy/README.md to install Hermes and wire the MCP seam."
+echo "      See docs/HERMES_DEPLOY.md to install Hermes and wire the MCP seam."
+echo "API token: grep API_TOKEN $BACKEND/.env"

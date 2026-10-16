@@ -1,5 +1,9 @@
 # Bill of Materials — Tier 1 "Discreet AI Glasses"
 
+> **Early research (July 2026).** Kept for context. aiGlass ended up running on **Ray-Ban Meta**
+> through Meta's Wearables Device Access Toolkit instead of DIY or third-party hardware, see
+> [the main README](../../README.md). Prices are indicative and from that date.
+
 Indian-market pricing, indicative as of **July 2026** (excl. shipping; prices fluctuate).
 Sources: [Robu.in](https://robu.in), [Robocraze](https://robocraze.com),
 [Robokits](https://robokits.co.in), [Thingbits](https://www.thingbits.in), [Amazon.in](https://www.amazon.in).
@@ -22,7 +26,7 @@ Sources: [Robu.in](https://robu.in), [Robocraze](https://robocraze.com),
 > lets the glasses look normal. Instead the AI **speaks** answers through the bone-conduction speaker and
 > shows detail in the phone app — the same audio-first model as Ray-Ban Meta and the original Omi, neither
 > of which has a display. (A cheap reflected-OLED HUD is possible but can never be sleek at this tier, so
-> it's out of scope — see git history if you ever want it back.)
+> it's out of scope.)
 
 > The board is ~half the total. It's the one part not to cheap out on — the **Sense** variant
 > is what packs camera + mic into one 21×17.5mm module. The plain XIAO ESP32-S3 (no camera) is

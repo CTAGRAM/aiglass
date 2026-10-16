@@ -1,45 +1,62 @@
 # Roadmap
 
-> **Pivot → Lane B (buy AR hardware, build the brain).** Target device: **Brilliant Labs Halo** (camera +
-> display + speaker + open SDK, ships now; ports to XREAL Aura later). The backend + Hermes brain below is
-> unchanged and reused as-is. Phase 3 (DIY firmware) is now **Lane-A-only / optional**; the new last mile
-> is the **device app** (see task list). Phases 1–2 are done and verified regardless of hardware.
+## Status
 
-Locked scope: **sleek DIY AI glasses ("image 2" look)** — XIAO ESP32-S3 Sense (camera + mic) + MAX98357
-bone-conduction speaker in a normal-looking frame, self-hosted backend, **Hermes** orchestrator brain.
-~₹3,500–5,500 hardware. **No HUD/display** — audio-first: the AI speaks answers and detail goes to the
-phone app (like Ray-Ban Meta / Omi). A display can't be sleek at this tier — see [BOM.md](BOM.md).
+```mermaid
+flowchart LR
+    subgraph Done["✅ Done"]
+        D1["Backend core<br/>pipeline · memory · auth"]
+        D2["Hermes + Claude agent<br/>via MCP"]
+        D3["Glasses app on Ray-Ban Meta<br/>Gemini Live"]
+        D4["UPI QR pay<br/>with spoken confirmation"]
+        D5["AWS deploy<br/>Caddy HTTPS · systemd"]
+        D6["Spider-Sense firmware"]
+    end
+    subgraph Next["🔜 Next"]
+        N1["App subscribes to /ws/events<br/>and mirrors turns to /turn"]
+        N2["Auto-capture: caption frames<br/>into memory"]
+        N3["LLM action-item extractor"]
+        N4["Spider-Sense alerts in the app"]
+    end
+    subgraph Later["🧭 Later"]
+        L1["Port the brain to Meta's<br/>Muse Spark + SAM 3.1"]
+        L2["Redis EventHub<br/>for multi-process"]
+        L3["Postgres + vector search<br/>for memory"]
+    end
+    Done --> Next --> Later
+```
 
-Each phase has a concrete **verify** gate. We don't move on until it's green.
+## Done
 
-## Phase 1 — Backend core ✅ (in progress)
-Self-hostable FastAPI backend: capture → STT → memory → action items → orchestrator.
-Pluggable providers (mock defaults, stdlib-only core).
-- **Verify:** `python3 backend/tests/test_pipeline.py` runs the full pipeline with mock STT + mock
-  orchestrator and asserts transcript stored, memory created, action extracted, action dispatched.
+| Milestone | Verified by |
+|---|---|
+| Backend core: capture → transcript → memory → action items → hand-off | `tests/test_pipeline.py` |
+| OpenAI-compatible shim to the Hermes agent | `tests/test_shim.py`, live on the glasses |
+| Hermes on Claude Sonnet 4.6 with aiglass MCP tools | Live: "list my action items" answered from memory |
+| Glasses app: camera, voice, tool routing | Live on Ray-Ban Meta Gen 1 with Developer Mode |
+| UPI QR pay | Scan, parse, confirm and intent launch verified in logcat. Personal QRs are declined by NPCI rules; merchant QRs are the target |
+| Deploy: Lightsail, Caddy + Let's Encrypt, token auth | Deployed in ap-south-1 (Mumbai) |
+| Spider-Sense firmware and bring-up guide | Compiles for ESP32 (Arduino core 3.3, Pololu VL53L1X 1.3) |
 
-## Phase 2 — Hermes orchestrator on the VPS
-Stand up Hermes, connect it to the backend's MCP server, wire the action-item → Hermes handoff.
-- **Verify:** an utterance containing "remind me to email Sam" results in Hermes receiving and acting on a
-  structured task (observed in Hermes logs / a message back to you).
+## Next
 
-## Phase 3 — ESP32-S3 firmware
-Arduino/ESP-IDF: PDM mic capture + Opus/PCM stream, periodic JPEG frame, I2S audio OUT to the
-bone-conduction speaker, button, LiPo, low-power. No display.
-- **Verify:** board streams live audio to the backend and the backend transcribes it; a reply audio clip
-  from the backend plays through the speaker.
+1. **Live result push.** The app subscribes to `/ws/events`, so long-running agent results are spoken as soon
+   as they land, and it posts every turn to `/turn` so the agent sees the whole conversation.
+2. **Auto-capture.** Caption the glasses feed into searchable `observation` memories through
+   `/ingest_frame` ("where did I leave my keys?"), behind an explicit on/off control.
+3. **Smarter action items.** Replace the rule-based `actions.py` with one LLM call that returns the same type.
+4. **Spider-Sense in the app.** Subscribe to the band's BLE notifications and announce the direction of
+   close calls.
 
-## Phase 4 — Companion app
-Rebranded app: BLE pairing, audio/frame forwarding, live transcript + memory browser + AI chat.
-- **Verify:** end-to-end — speak → see live transcript in app → action executed by Hermes → spoken reply
-  in your ear + phone notification.
+## Later
 
-## Phase 5 — Sleek enclosure
-Thick-temple 3D-printed frame (or gutted audio-glasses shell) that hides the board + battery + speaker,
-camera dot at the hinge — the "image 2" look. Fit, comfort, battery life.
-- **Verify:** looks like normal glasses at arm's length; all-day-ish battery.
+- **Meta Model API.** Move perception and reasoning to Muse Spark (video, images and long context in one
+  call) and use SAM 3.1 for object segmentation and tracking in the glasses feed.
+- **Scale-out.** Swap the in-process `EventHub` for Redis pub/sub, and SQLite for Postgres with vector search.
+- **Stateful web actions** (bookings, carts), always ending in a human approval step.
 
-## Non-goals (v1)
-- **No display of any kind** — audio-first. A HUD forces a visible module and can't be sleek at this budget.
-- No fully invisible/undetectable form factor (a camera dot is visible, like image 2 itself).
-- No on-device inference — all cognition is server-side.
+## Non-goals
+
+- **Identifying strangers.** No face recognition, no lookups of people.
+- **Autonomous payments.** aiGlass prepares; you authorise.
+- **Moving the Spider-Sense safety loop off the ESP32.** The phone is telemetry only.

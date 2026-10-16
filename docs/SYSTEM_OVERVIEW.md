@@ -7,28 +7,24 @@ all self-hosted except the two cloud model APIs (Gemini for perception, Claude f
 tool → custom **FastAPI shim** on **AWS Lightsail** → **Nous Hermes Agent** (**Claude Sonnet 4.6** via
 Anthropic API) with **MCP** memory tools + **Tavily** web search.
 
-```
-Ray-Ban Meta (camera + mics)
-        │  BLE (DAT SDK)
-        ▼
-Android app (VisionClaw, Kotlin) ──audio+frames──▶ Gemini Live API (Google)   ← real-time voice + vision
-        │  execute tool (text task only)
-        ▼
-FastAPI shim  POST /v1/chat/completions   (custom Python, AWS Lightsail, TLS + token auth)
-        │  subprocess: hermes -z "<task>"
-        ▼
-Nous Hermes Agent ──▶ Claude Sonnet 4.6 (Anthropic API)
-        │  MCP tools
-        ├── aiglass memory (SQLite): search_memories, list_action_items, add_memory, recent_transcripts
-        └── Tavily web search
+```mermaid
+flowchart TD
+    RB["Ray-Ban Meta<br/>camera + mics"] -- "DAT SDK" --> APP["Android app<br/>Kotlin, VisionClaw-based"]
+    APP <-- "audio + frames" --> GL["Gemini Live<br/>real-time voice + vision"]
+    GL -- "execute tool (text task)" --> APP
+    APP -- "POST /v1/chat/completions" --> SHIM["FastAPI shim<br/>AWS Lightsail, TLS + token"]
+    SHIM -- "hermes -z task" --> HE["Hermes agent"]
+    HE <--> CL["Claude Sonnet 4.6"]
+    HE -- "MCP" --> MEMT["aiglass memory tools<br/>SQLite"]
+    HE -- "MCP" --> WEB["Tavily web search"]
 ```
 
 ## 1. Deployment
 
 | Component | What it actually is |
 |---|---|
-| **Host** | AWS **Lightsail** `small_3_1` (2 GB / 2 vCPU), Ubuntu 22.04, ap-south-1, **static IP 3.7.127.187** |
-| **TLS / entry** | **Caddy** + Let's Encrypt → `https://3-7-127-187.nip.io` (nip.io wildcard DNS) |
+| **Host** | AWS **Lightsail** `small_3_1` (2 GB / 2 vCPU), Ubuntu 22.04, ap-south-1 (Mumbai), static IP |
+| **TLS / entry** | **Caddy** + Let's Encrypt → `https://<ip-with-dashes>.nip.io` (nip.io wildcard DNS, no domain needed) |
 | **Backend** | Custom **Python FastAPI** app (`backend/app/`), `systemd` service `aiglass-backend` |
 | **MCP server** | `python -m app.mcp_server` (stdio), spawned by Hermes |
 | **Agent** | **Nous Research Hermes Agent** (Python framework), `~/.local/bin/hermes`, `systemd --user` service `hermes-gateway` |
@@ -103,16 +99,21 @@ tool set** above. That's what makes Claude cooperate with the user's memory.
 ## 5. Android app
 
 Reused from **[Intent-Lab/VisionClaw](https://github.com/Intent-Lab/VisionClaw)** (`samples/CameraAccessAndroid`),
-not rewritten. Runtime config (gitignored `Secrets.kt`): Gemini key, `openClawHost=https://3-7-127-187.nip.io`,
+not rewritten. Runtime config (gitignored `Secrets.kt`): Gemini key, `openClawHost=https://<your-server>`,
 port 443, `openClawGatewayToken` = backend API token. Uses the **Meta Wearables DAT SDK** (GitHub Packages,
 needs a PAT). Requires Developer Mode enabled in the Meta AI app to pair the glasses.
 
 ## 6. Status & next steps
 
-- ✅ Voice, vision, memory, agent tool-calling, web search — all working end-to-end.
-- ⬜ Glasses camera stream (falls back to phone camera unless the glasses are worn/awake).
-- ⬜ Stateful actions (e.g. add-to-cart) — needs Hermes' browser tool + a logged-in session; fragile due to
-  bot-detection, and purchases must stay a manual, human-approved step.
-- ⬜ Auto-capture pipeline (continuously fill memory from the glasses feed).
+- ✅ Voice, vision, memory, agent tool-calling and web search, working end-to-end.
+- ✅ Glasses camera stream (needs Developer Mode on the glasses).
+- ✅ UPI QR pay from the glasses, with spoken confirmation and a ₹1,400 voice cap.
+- ✅ Spider-Sense firmware and build guide.
+- ⬜ App subscribes to `/ws/events` and mirrors turns to `/turn`, so the backend sees every turn.
+- ⬜ Auto-capture: continuously caption frames into memory (`/ingest_frame` is ready).
+- ⬜ Stateful web actions (e.g. add-to-cart). They need a logged-in browser session and are fragile due to
+  bot detection; purchases must stay a manual, human-approved step.
+
+The full plan is in [ROADMAP.md](ROADMAP.md).
 
 See also: [ARCHITECTURE](ARCHITECTURE.md) · [DUAL_BRAIN](DUAL_BRAIN.md) · [HERMES_DEPLOY](HERMES_DEPLOY.md) · [ROADMAP](ROADMAP.md)

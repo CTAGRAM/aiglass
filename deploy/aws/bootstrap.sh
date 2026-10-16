@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Bootstrap the aiGlass backend + Hermes on a fresh Ubuntu 22.04 instance.
-# Run on the instance (after SSH). Expects env: REPO_URL, GROQ_API_KEY.
-# Untested end-to-end by the author — paste any error back and we'll fix it.
+# Run on the instance (after SSH). Expects env: REPO_URL, LLM_API_KEY (optional: LLM_BASE_URL, LLM_MODEL).
 set -euo pipefail
 
-: "${REPO_URL:?set REPO_URL to your aigr git repo}"
+: "${REPO_URL:?set REPO_URL to your aiglass git repo}"
 : "${LLM_API_KEY:?set LLM_API_KEY (bearer token for your OpenAI-compatible LLM endpoint)}"
 LLM_BASE_URL="${LLM_BASE_URL:-https://api.groq.com/openai/v1}"   # your endpoint's /v1 base
 LLM_MODEL="${LLM_MODEL:-llama-3.2-11b-vision-preview}"           # a vision-capable model id
@@ -18,8 +17,8 @@ sudo apt-get install -y python3-venv python3-pip git curl
 
 echo "==> Fetching the repo"
 cd "$HOME"
-[ -d aigr ] || git clone "$REPO_URL" aigr
-cd aigr/backend
+[ -d aiglass ] || git clone "$REPO_URL" aiglass
+cd aiglass/backend
 
 echo "==> Python env + deps"
 python3 -m venv .venv
@@ -39,6 +38,7 @@ VISION_MODEL=$LLM_MODEL
 VISION_API_KEY=$LLM_API_KEY
 ORCH_PROVIDER=hermes
 HERMES_URL=http://127.0.0.1:8080
+HERMES_BIN=$HOME/.local/bin/hermes
 AIGLASS_API_URL=http://127.0.0.1:8000
 EOF
 echo "==> API_TOKEN = $API_TOKEN   (use this as 'Authorization: Bearer <token>' from the app)"
@@ -50,8 +50,8 @@ Description=aiGlass backend (FastAPI)
 After=network.target
 [Service]
 EnvironmentFile=/etc/aiglass.env
-WorkingDirectory=$HOME/aigr/backend
-ExecStart=$HOME/aigr/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+WorkingDirectory=$HOME/aiglass/backend
+ExecStart=$HOME/aiglass/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=always
 User=$USER
 [Install]
@@ -65,8 +65,8 @@ Description=aiGlass MCP server
 After=network.target
 [Service]
 EnvironmentFile=/etc/aiglass.env
-WorkingDirectory=$HOME/aigr/backend
-ExecStart=$HOME/aigr/backend/.venv/bin/python -m app.mcp_server
+WorkingDirectory=$HOME/aiglass/backend
+ExecStart=$HOME/aiglass/backend/.venv/bin/python -m app.mcp_server
 Restart=always
 User=$USER
 [Install]
@@ -74,7 +74,7 @@ WantedBy=multi-user.target
 EOF
 
 echo "==> Installing MCP dep + starting services"
-./.venv/bin/pip install "mcp>=1.0" || echo "WARN: mcp install failed; API still runs, MCP seam disabled"
+./.venv/bin/pip install "mcp>=1.0,<2" || echo "WARN: mcp install failed; API still runs, MCP seam disabled"
 sudo systemctl daemon-reload
 sudo systemctl enable --now aiglass-backend.service
 sudo systemctl enable --now aiglass-mcp.service || true

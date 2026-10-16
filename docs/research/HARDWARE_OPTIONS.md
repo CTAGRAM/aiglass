@@ -1,5 +1,9 @@
 # Hardware options — buy-assembled vs DIY (July 2026)
 
+> **Early research (July 2026).** Kept for context. aiGlass ended up running on **Ray-Ban Meta**
+> through Meta's Wearables Device Access Toolkit instead of DIY or third-party hardware, see
+> [the main README](../../README.md). Prices are indicative and from that date.
+
 The user wants: HUD display + camera + speaker + self-hostable/reconfigurable backend + discreet.
 **No single product delivers all of these** — the most discreet HUD glasses drop the camera & speaker
 for privacy/size; the ones that keep camera+speaker+HUD are not invisible. Physics, not budget.
@@ -29,5 +33,5 @@ Our **backend + Hermes orchestrator is hardware-agnostic** and reusable across e
 - Want HUD + camera + speaker + own backend, buy-assembled → **Brilliant Labs Halo**.
 - Want best camera + own backend, no HUD → **Mentra Live**.
 - Want maximum discreet HUD, no camera → **Even Realities G2**.
-- Want cheapest + fully yours, no HUD → **DIY XIAO** (current `firmware/` path).
+- Want cheapest + fully yours, no HUD → **DIY XIAO**.
 - In ALL cases the `backend/` + Hermes brain is the same reusable core.

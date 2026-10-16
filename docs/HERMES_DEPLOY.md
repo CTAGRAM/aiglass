@@ -1,63 +1,65 @@
-# Hermes brain — deploy & connect (Phase 2)
+# Hermes agent: install and connect
 
-Hermes is the **action brain**: it reads what the glasses captured (via our MCP server) and *executes*
-action items in a sandbox on your VPS — send the email, run the code, book the thing — then reports back.
-OpenClaw can replace it later behind the same MCP seam.
+[Hermes](https://github.com/nousresearch/hermes-agent) is the deep brain. It takes a task, reasons with
+Claude Sonnet 4.6, and uses the aiglass MCP tools to read and write your memory.
 
-## Two ways to connect (pick one)
+## Two connections
 
-**A. MCP pull (recommended, idiomatic Hermes).** Hermes connects to our `aiglass` MCP server, reads open
-action items with `list_action_items`, does them, and writes results back with `add_memory`. Hermes owns
-the loop; the backend just exposes tools. Most robust — survives Hermes restarts.
+```mermaid
+flowchart LR
+    APP["Android app<br/>execute(task)"] -- "POST /v1/chat/completions" --> SHIM["Backend shim<br/>main.py"]
+    SHIM -- "① hermes -z task<br/>(subprocess)" --> HE["Hermes agent"]
+    HE -- "② MCP stdio" --> MCP["app.mcp_server<br/>memory + web search"]
+    PIPE["Pipeline<br/>extracted action items"] -. "③ optional HTTP push<br/>POST HERMES_URL/tasks" .-> HE
+```
 
-**B. HTTP push (simplest, already tested).** The backend POSTs each action item to Hermes as it happens
-(`app/orchestrator/hermes.py` → `POST {HERMES_URL}/tasks`). This is what
-`backend/tests/test_hermes_handoff.py` verifies. Use it when Hermes exposes a webhook/task endpoint.
+| | Connection | Used for | Config |
+|---|---|---|---|
+| ① | **Shim → Hermes CLI** | Every `execute` call from the glasses. This is the main path | `HERMES_BIN`, `HERMES_TIMEOUT` |
+| ② | **Hermes → MCP server** | The agent reading and writing memory, and web search | Hermes's MCP config |
+| ③ | **Pipeline → Hermes HTTP** (optional) | Pushing action items extracted from transcripts | `ORCH_PROVIDER=hermes`, `HERMES_URL`, `HERMES_API_KEY` |
 
-> The exact Hermes intake API depends on your Hermes version. `/tasks` + `{instruction, kind, source}`
-> is our assumed contract — adjust `HermesOrchestrator._url`/payload to match, or use mode A.
+For ③, `POST {HERMES_URL}/tasks` with `{instruction, kind, source}` is the contract assumed by
+`app/orchestrator/hermes.py`. Adjust it to your Hermes version's intake API. The backend degrades
+gracefully if Hermes is unreachable, which `tests/test_hermes_handoff.py` checks.
 
-## Deploy steps
+## Install
 
-1. **Provision a VPS** — Ubuntu 22.04+, 2 vCPU / 4 GB is plenty. Open only SSH + your backend port (put
-   it behind Caddy/Nginx with TLS). Everything below runs here so audio/transcripts never leave your box.
+On the same server as the backend:
 
-2. **Install Hermes** (self-hosted, per [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent)):
-   ```bash
-   curl -fsSL https://hermes-agent.nousresearch.com/install.sh | sh   # one-line install
-   hermes init                                                        # set model + messaging channel
-   ```
-   Give it an LLM key (Claude/GPT/Groq or a local model) and enable **sandboxed** tool execution.
+```bash
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh | sh
+hermes init
+which hermes            # usually ~/.local/bin/hermes
+```
 
-3. **Run the backend + MCP server** on the same VPS:
-   ```bash
-   cd backend && python3 -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
-   uvicorn app.main:app --host 0.0.0.0 --port 8000 &     # ingest + REST API
-   python -m app.mcp_server &                            # MCP tools for Hermes
-   ```
+1. **Model.** Choose Claude Sonnet 4.6 through the Anthropic API. Use a direct provider: an
+   OpenAI-compatible proxy that strips tool definitions breaks tool-calling, and the agent silently
+   stops using its tools.
+2. **MCP server.** Register aiglass as a stdio MCP server in Hermes's config (`~/.hermes/config.yaml`):
 
-4. **Connect Hermes to our tools (mode A).** Add the `aiglass` MCP server to Hermes' MCP config so it can
-   call `search_memories`, `recent_transcripts`, `list_action_items`, `add_memory`. Hermes now sees
-   everything the glasses captured and can write results back into your memory.
+   | Field | Value |
+   |---|---|
+   | command | `~/aiglass/backend/.venv/bin/python` |
+   | args | `-m app.mcp_server` |
+   | working directory | `~/aiglass/backend` |
+   | env | `AIGLASS_DB`, `TAVILY_API_KEY`, `API_TOKEN`, `AIGLASS_API_URL` (same as `/etc/aiglass.env`) |
 
-5. **Or enable push (mode B).** Point the backend at Hermes and restart uvicorn:
-   ```bash
-   export ORCH_PROVIDER=hermes
-   export HERMES_URL=http://127.0.0.1:8080     # your Hermes task intake
-   export HERMES_API_KEY=...                    # if Hermes requires auth
-   ```
+3. **Shim.** Set `HERMES_BIN` in `/etc/aiglass.env` to the absolute path from `which hermes`, because
+   systemd's `PATH` is minimal. Then `sudo systemctl restart aiglass-backend`.
 
 ## Verify
 
-- **Contract:** `python3 backend/tests/test_hermes_handoff.py` → 2/2 (proves the handoff + graceful
-  degradation, no real Hermes needed).
-- **Live:** speak/type "remind me to email Sam the report" → confirm Hermes receives a structured `email`
-  task and messages you back on your chosen channel.
+```bash
+cd ~/aiglass/backend && .venv/bin/python -m pytest tests/ -q        # contract tests, no live Hermes needed
+hermes -z "Using the aiglass memory tools, list my action items."   # Hermes reaches the MCP tools
+curl -s -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"What can you do?"}]}' \
+  https://<your-host>/v1/chat/completions                            # the full shim path
+```
 
 ## Security
 
-- Keep tool execution **sandboxed** (Hermes/OpenClaw setting) to bound blast radius.
-- TLS on the backend; encrypt the DB volume at rest.
-- Store `HERMES_API_KEY` / LLM keys in a `.env` (gitignored), never in code.
-- The capture button on the glasses is the kill switch — don't run always-on without it.
+- Keep Hermes's tool execution sandboxed to bound what a bad task can do.
+- Keep keys in `/etc/aiglass.env` or Hermes's own `.env`, never in the repo.
+- Purchases and other irreversible actions stay human-approved.

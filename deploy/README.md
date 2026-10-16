@@ -1,59 +1,47 @@
-# Deploy to your Vultr VPS
+# Deploy
 
-Your box (provisioned via the Vultr API):
+Two ways to run the backend on a server. Both install it as a systemd service; the AWS path also sets up
+the MCP service and HTTPS, and is what the live system runs on.
 
-| | |
-|---|---|
-| IP | **65.20.83.134** |
-| Region | Mumbai (bom) |
-| Spec | Ubuntu 24.04 · 2 GB / 1 vCPU · $10/mo |
-| Label | aiglass-hermes |
+| Path | Best for | Script | Guide |
+|---|---|---|---|
+| **AWS Lightsail** (recommended) | A ~$12/month box in Mumbai with HTTPS, bearer-token auth and the MCP server | [`aws/bootstrap.sh`](aws/bootstrap.sh) + [`aws/tls.sh`](aws/tls.sh) | [aws/README.md](aws/README.md) |
+| **Any Ubuntu VPS** | Vultr, DigitalOcean, Hetzner… run as root from `/opt/aiglass` | [`setup.sh`](setup.sh) | below |
 
-## 1. Get SSH access
-The root password is on the **Vultr dashboard** → your instance → *Overview* (or reset it there).
-For key-based login instead, paste me your **public** key (`~/.ssh/id_ed25519.pub`) and I'll add it via the API.
+## What ends up on the server
 
-## 2. Copy the code up
+```mermaid
+flowchart LR
+    NET(["Phone app<br/>HTTPS + bearer token"]) --> CADDY["Caddy :443<br/>Let's Encrypt"]
+    CADDY --> API["aiglass-backend.service<br/>uvicorn app.main:app :8000"]
+    API --> DB[("SQLite")]
+    API -- "hermes -z" --> HERMES["Hermes agent<br/>(user service)"]
+    HERMES -- "MCP stdio" --> MCP["app.mcp_server"]
+    MCP --> DB
+    ENV[/"/etc/aiglass.env<br/>API_TOKEN, providers, HERMES_BIN"/] -.-> API
+```
+
+## Any Ubuntu VPS (`setup.sh`)
+
 ```bash
-ssh root@65.20.83.134 'mkdir -p /opt/aiglass'
-scp -r backend deploy root@65.20.83.134:/opt/aiglass/
+# from your machine
+ssh root@<server> 'mkdir -p /opt/aiglass'
+scp -r backend deploy root@<server>:/opt/aiglass/
+
+# on the server
+bash /opt/aiglass/deploy/setup.sh
+curl http://127.0.0.1:8000/health          # {"ok": true, ...}
+grep API_TOKEN /opt/aiglass/backend/.env   # use as "Authorization: Bearer <token>"
 ```
 
-## 3. Run setup
-```bash
-ssh root@65.20.83.134 'bash /opt/aiglass/deploy/setup.sh'
-curl http://65.20.83.134:8000/health      # -> {"ok": true, ...}
-```
-The backend now runs as a service (`systemctl status aiglass-backend`) and survives reboots.
+Then edit `/opt/aiglass/backend/.env` to go live (see [backend/.env.example](../backend/.env.example)) and
+`systemctl restart aiglass-backend`. To wire up the agent, follow [docs/HERMES_DEPLOY.md](../docs/HERMES_DEPLOY.md).
+For HTTPS, `aws/tls.sh` works on any Ubuntu box with ports 80 and 443 open.
 
-## 4. Point vision at your LLM endpoint
-Edit `/opt/aiglass/backend/.env`:
-```
-VISION_PROVIDER=llm
-VISION_BASE_URL=https://YOUR-LLM-HOST/v1     # OpenAI-compatible
-VISION_API_KEY=YOUR_KEY
-VISION_MODEL=YOUR_MODEL
-```
-`systemctl restart aiglass-backend`.
+## Before real use
 
-## 5. Install Hermes + wire the MCP seam
-Install Hermes per its official docs ([nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent)) —
-I won't fabricate the exact command; follow their installer. Then:
-
-- Configure Hermes' **LLM** to your custom endpoint (the same `BASE_URL` + key as above).
-- Add our **MCP server** to Hermes' MCP config as a stdio server so it can read/write memory:
-  ```
-  command: /opt/aiglass/backend/.venv/bin/python
-  args:    ["-m", "app.mcp_server"]
-  cwd:     /opt/aiglass/backend
-  ```
-- Point the backend at Hermes in `.env`: `ORCH_PROVIDER=hermes`, `HERMES_URL=...`, then
-  `systemctl restart aiglass-backend`.
-
-Verify end-to-end with `backend/tests/test_hermes_handoff.py` and a live "remind me to…" utterance.
-
-## ⚠️ Security before real use
-Port 8000 is currently open to the internet with **no auth**. Before streaming real data:
-- restrict it (`ufw allow from <your-phone-ip> to any port 8000` and remove the open rule), **or**
-- put it behind **Caddy/Nginx with TLS + a bearer token**.
-Also **rotate the Vultr API key** you shared earlier, and keep `.env` secrets off git (already gitignored).
+- [ ] `API_TOKEN` is set (both scripts generate one).
+- [ ] HTTPS is on, and public port 8000 is closed once it is.
+- [ ] Only SSH, 80 and 443 are open in the firewall.
+- [ ] Keys live in `/etc/aiglass.env` or `backend/.env`, never in git.
+- [ ] The database volume is backed up or encrypted at rest.

@@ -1,47 +1,95 @@
-# Camera Access App
+# aiGlass Android app
 
-A sample Android application demonstrating integration with Meta Wearables Device Access Toolkit. This app showcases streaming video from Meta AI glasses, capturing photos, and managing connection states.
+The phone side of aiGlass. It connects to Ray-Ban Meta glasses through Meta's Wearables Device Access
+Toolkit (DAT), runs a live Gemini session over the glasses' camera and audio, and routes Gemini's tool
+calls either to the aiGlass backend or to on-phone tools such as UPI QR payment.
 
-## Features
+Based on Intent-Lab's [VisionClaw](https://github.com/Intent-Lab/VisionClaw) Android sample, which builds on
+Meta's DAT camera-access sample. See [Credits](#credits).
 
-- Connect to Meta AI glasses
-- Stream camera feed from the device
-- Capture photos from glasses
-- Share captured photos
+## How a session runs
 
-## Prerequisites
+```mermaid
+flowchart LR
+    UI["StreamScreen<br/>start / stop AI"] --> VM["GeminiSessionViewModel"]
+    VM --> LIVE["GeminiLiveService<br/>WebSocket to Gemini Live"]
+    VM --> AUD["AudioManager<br/>16 kHz mic in · 24 kHz voice out"]
+    VM --> TR["ToolCallRouter"]
+    LIVE -- "every frame" --> LF["LatestFrame<br/>current JPEG"]
+    LIVE -- "tool calls" --> TR
+    TR -- "execute" --> OCB["OpenClawBridge<br/>POST /v1/chat/completions"]
+    TR -- "scan_payment_qr<br/>initiate_payment" --> PB["PaymentBridge"]
+    LF --> PB
+    PB -- "upi://pay" --> UPI["UPI app"]
+    OCB --> BE["aiGlass backend"]
+```
 
-- Android Studio Arctic Fox (2021.3.1) or newer
-- JDK 11 or newer
-- Android SDK 31+ (Android 12.0+)
-- Meta Wearables Device Access Toolkit (included as a dependency)
-- A Meta AI glasses device for testing (optional for development)
+## Tools Gemini can call
 
-## Building the app
+| Tool | Handled by | What it does |
+|---|---|---|
+| `execute(task)` | `OpenClawBridge` → backend | Anything durable: web research, notes, lists, memory recall. Runs through the Hermes agent |
+| `scan_payment_qr()` | `PaymentBridge` | Decodes the UPI QR in the current glasses frame with ML Kit; returns payee and any fixed amount |
+| `initiate_payment(amount)` | `PaymentBridge` | After spoken confirmation, opens the UPI app pre-filled. Refuses amounts above ₹1,400 |
 
-### Using Android Studio
+## What I added to the upstream sample
 
-1. Clone this repository
-1. Open the project in Android Studio
-1. Add your personal access token (classic) to the `local.properties` file (see [SDK for Android setup](https://wearables.developer.meta.com/docs/getting-started-toolkit/#sdk-for-android-setup))
-1. Click **File** > **Sync Project with Gradle Files**
-1. Click **Run** > **Run...** > **app**
+| File | Change |
+|---|---|
+| `openclaw/PaymentBridge.kt` | New. QR scan → UPI intent, with amount validation and a voice-payment cap |
+| `gemini/LatestFrame.kt` | New. Keeps the most recent camera JPEG for on-demand tools |
+| `openclaw/ToolCallModels.kt` | Declares the two payment tools next to `execute` |
+| `openclaw/ToolCallRouter.kt` | Routes payment tools on-device and everything else to the backend |
+| `gemini/AudioManager.kt` | Routes voice to the glasses' Bluetooth headset when possible, falls back to the phone mic |
+| `gemini/GeminiLiveService.kt` | Saves each frame into `LatestFrame` |
+| `settings/SettingsManager.kt` | System prompt: memory-routing rule and a strict confirm-before-pay protocol |
+| `app/build.gradle.kts` | Adds ML Kit barcode scanning |
 
-## Running the app
+## Audio on Ray-Ban Meta Gen 1
 
-1. Turn 'Developer Mode' on in the Meta AI app.
-1. Launch the app.
-1. Press the "Connect" button to complete app registration.
-1. Once connected, the camera stream from the device will be displayed
-1. Use the on-screen controls to:
-   - Capture photos
-   - View and save captured photos
-   - Disconnect from the device
+```mermaid
+flowchart TD
+    S["Session starts"] --> Q{"Android 12+ and a Bluetooth<br/>headset among communication devices?"}
+    Q -- "no" --> PM["Phone mic + phone speaker"]
+    Q -- "yes" --> R["setCommunicationDevice(glasses)"]
+    R --> C{"Glasses camera streaming?"}
+    C -- "no (voice only)" --> GM["Glasses mic + glasses speakers"]
+    C -- "yes" --> GX["Glasses speakers keep working (A2DP)<br/>but the SCO mic link drops"]
+    GX --> F["Recording falls back to the phone mic"]
+```
 
-## Troubleshooting
+On Gen 1 the camera and the two-way SCO mic link can't run together, so with the camera on you hear the
+AI in the glasses and the phone captures your voice. A separate Bluetooth earbud also works as the mic.
 
-For issues related to the Meta Wearables Device Access Toolkit, please refer to the [developer documentation](https://wearables.developer.meta.com/docs/develop/) or visit our [discussions forum](https://github.com/facebook/meta-wearables-dat-android/discussions)
+## Set up and build
 
-## License
+1. **Enable Developer Mode** for the glasses in the Meta AI app. The Developer Mode toggle appears only
+   after your Meta account is registered as a Wearables developer. Without it the camera stream never starts
+   (see [Troubleshooting](../docs/TROUBLESHOOTING.md)).
+2. **Add your keys.** Copy
+   `app/src/main/java/com/meta/wearable/dat/externalsampleapps/cameraaccess/Secrets.kt.example`
+   to `Secrets.kt` and set:
 
-This source code is licensed under the license found in the LICENSE file in the root directory of this source tree.
+   | Field | Value |
+   |---|---|
+   | `geminiAPIKey` | Your Gemini API key |
+   | `openClawHost` | Your backend, e.g. `https://<your-server>` |
+   | `openClawPort` | `443` behind Caddy, or `8000` for a local backend |
+   | `openClawGatewayToken` | The backend's `API_TOKEN` |
+
+3. **Give Gradle access to Meta's SDK.** The DAT SDK is served from GitHub Packages. Put a GitHub token
+   with the `read:packages` scope in `local.properties` as `github_token=...`, or export `GITHUB_TOKEN`.
+4. **Build and install.**
+   ```bash
+   ./gradlew :app:installDebug
+   ```
+   Or open this folder in Android Studio and run the `app` configuration.
+
+`Secrets.kt` and `local.properties` are gitignored. Keys stay on your machine.
+
+## Credits
+
+- [Intent-Lab/VisionClaw](https://github.com/Intent-Lab/VisionClaw): the Gemini Live + tool-calling glasses sample this app starts from.
+- Meta Wearables Device Access Toolkit sample. Use is subject to the
+  [Meta Wearables Developer Terms](https://wearables.developer.meta.com/terms) and
+  [Acceptable Use Policy](https://wearables.developer.meta.com/acceptable-use-policy). See [LICENSE](LICENSE) and [NOTICE](NOTICE).

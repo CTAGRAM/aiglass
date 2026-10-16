@@ -17,6 +17,44 @@ near buzzes forever. This firmware goes one step further and uses
 **time-to-collision** (`distance ÷ closing speed`), which correctly ranks a slow
 hand at 30 cm as more urgent than a fast car at 4 m.
 
+## How it works
+
+Each sensor is read about every 33 ms. Per direction, the firmware runs this loop:
+
+```mermaid
+flowchart TD
+    R["Read distance from VL53L1X"] --> V{"Valid reading<br/>and ≤ 3 m?"}
+    V -- "no" --> X["Reset history<br/>motor off"]
+    V -- "yes" --> H{"Fresh history?<br/>(last reading < 400 ms ago)"}
+    H -- "no" --> S["Store as first sample<br/>motor off"]
+    H -- "yes" --> E["Closing speed =<br/>(previous − current) ÷ Δt<br/>smoothed with EMA α = 0.3"]
+    E --> A{"Approaching faster<br/>than 0.4 m/s?"}
+    A -- "no" --> O["Motor off<br/>(walls and still objects stay silent)"]
+    A -- "yes" --> T["TTC = distance ÷ closing speed"]
+    T --> D{"TTC"}
+    D -- "≥ 2.0 s" --> O
+    D -- "0.3 – 2.0 s" --> P["Buzz, strength rising<br/>linearly as TTC falls"]
+    D -- "≤ 0.3 s" --> M["Full strength"]
+    P --> K["20 ms full-power kick<br/>to start the motor"]
+    M --> K
+```
+
+The haptic decision never leaves the ESP32. Over BLE the band only reports the most urgent direction to
+the phone, for example `{"dir":"rear-L","d":1.20,"v":0.85,"ttc":1.41}`.
+
+```mermaid
+flowchart LR
+    TP["TP4056<br/>USB-C charger"] -- "charges" --> BAT["3.7 V LiPo"]
+    BAT --> ESP["ESP32"]
+    ESP -- "I²C · SDA 21 / SCL 22" --> S1["VL53L1X left"]
+    ESP -- "I²C" --> S2["VL53L1X right"]
+    ESP -- "I²C" --> S3["VL53L1X rear-left"]
+    ESP -- "I²C" --> S4["VL53L1X rear-right"]
+    ESP -- "4 × PWM" --> ULN["ULN2803A<br/>flyback diodes"]
+    ULN --> MOT["4 × coin vibration motors"]
+    BAT -- "COM pin 10" --> ULN
+```
+
 ## Parts
 
 | Part | Qty | ~₹ each |
